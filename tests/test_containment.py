@@ -26,7 +26,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agent.query_guard import (  # noqa: E402
+from agent.containment import (  # noqa: E402
     QueryRejected,
     RELATION,
     build_guarded_connection,
