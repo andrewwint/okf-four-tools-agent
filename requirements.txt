@@ -1,0 +1,2 @@
+# Agent runtime (AgentCore CodeZip). duckdb reads parquet natively — no pandas, no pyarrow.
+duckdb>=1.5
