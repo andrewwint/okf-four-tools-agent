@@ -36,7 +36,7 @@ _LEDGER: contextvars.ContextVar[provenance.Ledger] = contextvars.ContextVar("led
 def _record(result: tools.ToolResult) -> str:
     ledger = _LEDGER.get(None)
     if ledger is not None:
-        ledger.record(result.mode, result.text, result.figures)
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
     return result.render()
 
 app = BedrockAgentCoreApp()

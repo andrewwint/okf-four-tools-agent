@@ -211,3 +211,52 @@ class TestAgainstTheRealTools:
         ledger = provenance.Ledger()
         ledger.record(result.mode, result.text, result.figures)
         assert provenance.check("The figure is 31.96%.", ledger).ok
+
+
+class TestOnlyComparableFiguresMayBeSubtracted:
+    """Differences are allowed between like and like, and nowhere else.
+
+    A security review found that subtracting every grounded value from every other manufactures
+    plausible percentages. One ordinary okf_facts lookup grounds the estimate, its interval, the
+    standard error, the design effect, and 95 — because "95% CI" has to be quotable. Subtracting
+    95 from the rest yields 61.16, 63.04, 64.92, 94.04, and the gate waved all of them through.
+    """
+
+    @pytest.mark.parametrize("fabricated", ["63", "65", "61", "94"])
+    def test_a_confidence_level_cannot_be_subtracted_from_an_estimate(self, fabricated):
+        result = tools.okf_facts("What percent of adults with diagnosed diabetes take insulin?")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
+        verdict = provenance.check(f"{fabricated}% of diagnosed adults take insulin.", ledger)
+        assert not verdict.ok, f"{fabricated}% was manufactured out of the grounded set"
+
+    def test_a_single_lookup_offers_nothing_to_subtract(self):
+        """One figure and its metadata are not two comparable measurements."""
+        result = tools.okf_facts("What percent of adults with diagnosed diabetes take insulin?")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
+        assert provenance._derived(ledger.comparable) == set()
+
+    def test_the_verified_figure_and_its_interval_still_pass(self):
+        """The fix must not block the best-cited form of the answer."""
+        result = tools.okf_facts("What percent of adults with diagnosed diabetes take insulin?")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
+        assert provenance.check(
+            "31.96% currently take insulin (95% CI 30.08-33.84) [DIBINS_A].", ledger).ok
+
+    def test_two_groups_of_one_measure_may_still_be_compared(self):
+        """The legitimate case the derivation exists for."""
+        result = tools.okf_query("DIBINS_A", "diagnosed_diabetes", "SEX_A")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
+        assert provenance.check(
+            "Men 32.04%, women 31.88% — a gap of 0.16 points.", ledger).ok
+
+    def test_values_from_different_columns_are_not_comparable(self):
+        """A percentage minus a respondent count is not a quantity."""
+        result = tools.okf_query("DIBINS_A", "diagnosed_diabetes", "SEX_A")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures, result.comparable)
+        # 1579 - 32.0389 = 1546.96: reachable only by crossing columns.
+        assert not provenance.check("The rate is 1546.96%.", ledger).ok

@@ -151,9 +151,14 @@ class Ledger:
     """What the tools actually returned during one request."""
 
     grounded: set[str] = field(default_factory=set)   # numbers a trusted tool produced
+    # Sets of values that are the SAME KIND of quantity and may therefore be subtracted from one
+    # another — e.g. the percentages of one measure across the groups of one query. Kept separate
+    # from `grounded` because being quotable and being comparable are different permissions.
+    comparable: list[set[str]] = field(default_factory=list)
     modes: list[str] = field(default_factory=list)
 
-    def record(self, mode: str, text: str, figures: set[str] | None = None) -> None:
+    def record(self, mode: str, text: str, figures: set[str] | None = None,
+               comparable: list[set[str]] | None = None) -> None:
         """Record a tool result.
 
         `figures` is the set of values the tool actually COMPUTED. Prefer it always. Scraping
@@ -167,6 +172,9 @@ class Ledger:
             # Retrieved prose and live headlines contain numbers; those are never grounding.
             return
         self.grounded |= figures if figures is not None else numbers(text)
+        for group in comparable or []:
+            if len(group) > 1:
+                self.comparable.append(set(group))
 
 
 @dataclass
@@ -176,29 +184,39 @@ class Verdict:
     note: str = ""
 
 
-def _derived(grounded: set[str]) -> set[str]:
-    """Values obtainable by simple arithmetic on two grounded figures.
+def _derived(groups: list[set[str]]) -> set[str]:
+    """Differences between values that are the same kind of quantity.
 
-    Comparing two verified figures is legitimate analysis, not fabrication: "men 32.04%, women
-    31.88%, a gap of 0.2 points" is three true statements. Blocking the third pushed the agent
-    toward reporting figures without saying what they mean. Bounded deliberately to one operation
-    over a pair — a chain of derivations would let arbitrary numbers in through the back door.
+    Comparing two figures is legitimate analysis: "men 32.04%, women 31.88%, a gap of 0.16 points"
+    is three true statements, and blocking the third pushed the agent toward reporting figures
+    without saying what they mean.
+
+    But it must be a difference between COMPARABLE things, and that is the whole lesson here. The
+    first version subtracted every grounded value from every other, and a security review showed
+    what that manufactures. One ordinary lookup grounds the estimate, its interval, the standard
+    error, the design effect — and 95, because "95% CI" has to be quotable. Subtract 95 from each
+    of the others and out come 61.16, 63.04, 64.92, 94.04: numbers that never existed, that look
+    exactly like prevalence figures, and that the gate then waved through. "63% of diagnosed
+    adults take insulin" passed.
+
+    The flaw was not arithmetic, it was the missing idea of *kind*. A confidence level is not a
+    percentage of people; a design effect is not a rate. Only a tool knows which of its outputs
+    measure the same thing, so each one now declares that, and nothing here compares across the
+    groups it declared. DIFFERENCES ONLY, still: ratios were allowed briefly and immediately
+    laundered a fabrication (31.96 / 1.39 = 22.99, which rounds to 23, so "23% take insulin"
+    passed).
     """
-    values = []
-    for token in grounded:
-        try:
-            values.append(float(token))
-        except ValueError:
-            continue
-    # DIFFERENCES ONLY. Ratios were allowed briefly and immediately laundered a fabrication:
-    # 31.96 / 1.39 (the estimate over the design effect) = 22.99, which rounds to 23 — so
-    # "23% of diagnosed adults take insulin" passed. Dividing unrelated quantities manufactures
-    # a dense set of plausible-looking percentages, which is exactly what a grounding set must
-    # not be. Comparing two figures is the real use case, and a difference is what that needs.
     out: set[str] = set()
-    for i, a in enumerate(values):
-        for b in values[i + 1:]:
-            out.add(f"{abs(a - b):g}")
+    for group in groups:
+        values = []
+        for token in group:
+            try:
+                values.append(float(token))
+            except ValueError:
+                continue
+        for i, a in enumerate(values):
+            for b in values[i + 1:]:
+                out.add(f"{abs(a - b):g}")
     return out
 
 
@@ -211,7 +229,7 @@ def check(answer: str, ledger: Ledger, question: str = "") -> Verdict:
     asked = numbers(question)
     candidates = numbers(answer) - ledger.grounded - asked
     # A figure may be a grounded value, a rounding of one, or simple arithmetic over two of them.
-    allowed = ledger.grounded | _derived(ledger.grounded)
+    allowed = ledger.grounded | _derived(ledger.comparable)
     ungrounded = {n for n in candidates if not _rounds_to(n, allowed)}
 
     # A figure spelled out in words cannot be checked, so it cannot be allowed.

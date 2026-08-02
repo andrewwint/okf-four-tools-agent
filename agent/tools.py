@@ -54,6 +54,11 @@ class ToolResult:
     # its rendered text (a source filename, a group code, a row count in a citation). The
     # provenance ledger grounds on these and nothing else.
     figures: set[str] = field(default_factory=set)
+    # Sets of values that measure the SAME KIND of thing, and may therefore be subtracted from one
+    # another — the percentages of one measure across the groups of one query, say. Quoting a
+    # figure and comparing two figures are different permissions: a tool grants the second only
+    # for values it knows are commensurable. Empty means "nothing here may be subtracted".
+    comparable: list[set[str]] = field(default_factory=list)
 
     def render(self) -> str:
         head = f"[{self.mode}]"
@@ -130,7 +135,16 @@ def okf_query(measure: str, universe: str, group_by: str | None = None) -> ToolR
                      if name != (result.group_by or "")]
     figures = {f"{float(row[i]):g}" for row in result.rows for i in value_columns
                if i < len(row) and isinstance(row[i], (int, float))}
-    return ToolResult("COMPUTED", result.render(), query.CONCEPT["source"], figures)
+    # One comparable set PER COLUMN. Values in the same column measure the same thing across the
+    # groups, so "men 32.04%, women 31.88%, a gap of 0.16 points" is legitimate. Values in
+    # different columns do not: a percentage minus a respondent count is not a quantity.
+    comparable = [
+        {f"{float(row[i]):g}" for row in result.rows
+         if i < len(row) and isinstance(row[i], (int, float))}
+        for i in value_columns
+    ]
+    return ToolResult("COMPUTED", result.render(), query.CONCEPT["source"], figures,
+                      [g for g in comparable if len(g) > 1])
 
 
 def okf_query_catalogue() -> str:
