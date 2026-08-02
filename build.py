@@ -36,6 +36,7 @@ COMPILER = Path(
     )
 )
 
+DIST = HERE / "dist"
 BUNDLE_OUT = HERE / "agent" / "bundle"
 DATA_OUT = HERE / "agent" / "data" / "adult23_slice.parquet"
 
@@ -99,6 +100,39 @@ def build_slice(columns: list[str]) -> None:
     )
 
 
+# Exactly what the runtime needs. An allow-list, not an ignore-list: `codeLocation: "."` would
+# make the deployment package the repo root, and the repo root is where `.env` lives. A security
+# review flagged the live API key sitting inside the artifact — the boundary the whole
+# remote-Lambda design exists to create, undone by a packaging default. Staging is free; verifying
+# an exclusion you cannot see is not.
+SHIPS = ["main.py", "requirements.txt", "agent", "concepts"]
+NEVER_SHIP = {".env", ".env.example", "__pycache__", ".venv", "tests", "amplify", "node_modules"}
+
+
+def stage() -> list[str]:
+    """Copy only the allow-listed paths into dist/, then assert nothing secret came along."""
+    if DIST.exists():
+        shutil.rmtree(DIST)
+    DIST.mkdir()
+    for name in SHIPS:
+        source = HERE / name
+        if not source.exists():
+            sys.exit(f"cannot package: {name} is missing")
+        if source.is_dir():
+            shutil.copytree(
+                source, DIST / name,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".env*"),
+            )
+        else:
+            shutil.copy2(source, DIST / name)
+
+    # Belt and braces: fail the build if anything on the deny-list reached the artifact.
+    for path in DIST.rglob("*"):
+        if path.name in NEVER_SHIP or path.name.startswith(".env"):
+            sys.exit(f"REFUSING TO PACKAGE: {path.relative_to(DIST)} must never ship")
+    return [str(p.relative_to(DIST)) for p in sorted(DIST.rglob("*")) if p.is_file()]
+
+
 def main() -> None:
     concept = read_concept()
     columns = required_columns(concept)
@@ -106,12 +140,14 @@ def main() -> None:
     copied = copy_bundle(concept)
     build_slice(columns)
 
+    staged = stage()
     rows = duckdb.sql(f"SELECT count(*) FROM read_parquet('{DATA_OUT}')").fetchone()[0]
     print(f"bundle  {BUNDLE_OUT.relative_to(HERE)}/  — {len(copied)} verified concepts "
           f"+ the capability")
     print(f"slice   {DATA_OUT.relative_to(HERE)} — {rows:,} rows x {len(columns)} columns, "
           f"{DATA_OUT.stat().st_size / 1024:.0f} KB")
     print(f"columns {', '.join(columns)}")
+    print(f"package dist/ — {len(staged)} files, no .env, no tests, no amplify")
 
 
 if __name__ == "__main__":

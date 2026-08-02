@@ -1,7 +1,7 @@
 {
   "name": "okffourtools",
   "entrypoint": "main.py",
-  "codeLocation": ".",
+  "codeLocation": "dist",
   "build": "CodeZip",
   "runtimeVersion": "PYTHON_3_12",
   "networkMode": "PUBLIC",

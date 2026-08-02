@@ -16,6 +16,7 @@ forbids a number from coming from anywhere but a VERIFIED or COMPUTED one.
 
 from __future__ import annotations
 
+import contextvars
 import os
 from typing import Any
 
@@ -24,7 +25,19 @@ from bedrock_agentcore.runtime.models import PingStatus
 from strands import Agent, tool
 from strands.models.bedrock import BedrockModel
 
-from agent import tools
+from agent import provenance, tools
+
+# What the tools actually returned during THIS request. The provenance check reads it to verify
+# every number in the answer came from a tool allowed to produce one — which is what turns the
+# system prompt's central rule into a property of the code instead of a request to the model.
+_LEDGER: contextvars.ContextVar[provenance.Ledger] = contextvars.ContextVar("ledger")
+
+
+def _record(result: tools.ToolResult) -> str:
+    ledger = _LEDGER.get(None)
+    if ledger is not None:
+        ledger.record(result.mode, result.text)
+    return result.render()
 
 app = BedrockAgentCoreApp()
 log = app.logger
@@ -45,7 +58,7 @@ def okf_facts(question: str) -> str:
     """VERIFIED. Look up a figure that was recomputed from the microdata and checked at build
     time. Use this first for any question asking for a number about diabetes, insulin use,
     prediabetes, or age at diagnosis. Refuses when no verified concept covers the question."""
-    return tools.okf_facts(question).render()
+    return _record(tools.okf_facts(question))
 
 
 @tool
@@ -53,7 +66,7 @@ def okf_query(measure: str, universe: str, group_by: str = "") -> str:
     """COMPUTED. Calculate a survey-weighted figure now, for a combination the verified
     concepts do not already publish — for example a breakdown by sex. Arguments are keys, not
     SQL; the accepted keys are listed in the system prompt. Refuses an invalid combination."""
-    return tools.okf_query(measure, universe, group_by or None).render()
+    return _record(tools.okf_query(measure, universe, group_by or None))
 
 
 @tool
@@ -62,7 +75,7 @@ def kb_narrative(question: str) -> str:
     methodology, what a variable means, how weighting works. Use for 'why' and 'how' questions.
     It cannot supply a figure: the survey-weighted numbers are computed from microdata and
     appear in no document. Anything it returns is unverified source text."""
-    return tools.kb_narrative(question).render()
+    return _record(tools.kb_narrative(question))
 
 
 @tool
@@ -70,7 +83,7 @@ def health_news(topic: str) -> str:
     """LIVE, NOT VERIFIED. Fetch recent third-party headlines for one of: diabetes, insulin,
     public_health. Use only for 'what is new' questions. Never treat a figure in a headline as
     a fact — cite it as an unverified news claim."""
-    return tools.health_news(topic).render()
+    return _record(tools.health_news(topic))
 
 
 # --- The agent ---------------------------------------------------------------------------
@@ -110,9 +123,24 @@ def invoke(payload: dict[str, Any], context: Any = None) -> dict[str, Any]:
             "answer": f"Question too long (limit {MAX_QUESTION_CHARS} characters).",
         }
 
-    log.info("question: %s", question)
+    log.info("question received (%d chars)", len(question))
+    ledger = provenance.Ledger()
+    _LEDGER.set(ledger)
     try:
         answer = str(build_agent()(question)).strip()
+
+        # THE GATE. Every number in the answer must trace to a VERIFIED or COMPUTED tool result.
+        # A figure the model invented, or copied out of a retrieved passage or a headline, does
+        # not survive this — regardless of how convincing the surrounding text was.
+        verdict = provenance.check(answer, ledger, question)
+        if not verdict.ok:
+            log.warning("withheld: ungrounded figures %s", sorted(verdict.ungrounded))
+            return {
+                "answered": False,
+                "mode": "withheld-ungrounded",
+                "answer": f"{verdict.note}\n\n{tools.SAFETY}",
+            }
+
         return {"answered": True, "mode": "agent", "answer": f"{answer}\n\n{tools.SAFETY}"}
     except Exception as exc:
         # Never fail the request into a stack trace. Fall back to the verified bundle, which
