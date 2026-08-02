@@ -150,7 +150,13 @@ class TestTheSystemPromptStatesTheRule:
     def test_a_number_may_only_come_from_a_verified_or_computed_tool(self):
         """Assert the RULE, not one phrasing of it — the prompt gets reworded."""
         prompt = tools.SYSTEM_PROMPT.lower()
-        assert "only okf_facts" in prompt or "only okf_facts or okf_query" in prompt
+        # Pin the RULE, not one phrasing of it. This previously asserted "only okf_facts or
+        # okf_query", which went stale when verify_claim became a third source of verified
+        # figures — the suite was enforcing a contradiction with the tool list above it.
+        figure_sources = ("okf_facts", "okf_query", "verify_claim")
+        rule = next(ln for ln in tools.SYSTEM_PROMPT.splitlines() if "any FIGURE" in ln)
+        following = tools.SYSTEM_PROMPT.split(rule, 1)[1][:120]
+        assert all(src in rule + following for src in figure_sources)
         assert "never invent" in prompt
         assert "refused" in prompt, "the prompt must say what to do when a tool refuses"
 
@@ -255,3 +261,45 @@ class TestVerifyClaim:
         assert "population" in text
         # the population must travel with the figure
         assert "diagnosed diabetes" in text
+
+    def test_the_claim_never_reaches_the_rendered_text(self):
+        """Half of the safety property had no test, so it could regress silently.
+
+        Mutation-proven: echoing the claim into `text` passed the whole suite before this.
+        """
+        for claim in (62.4, 99.9, 12345.6):
+            text = tools.verify_claim(INSULIN_Q, claim).text
+            assert f"{claim:g}" not in text, f"claim {claim} was rendered into the tool text"
+
+    @pytest.mark.parametrize("claim,inside", [
+        (30.08, True),    # lower bound — inclusive
+        (33.84, True),    # upper bound — inclusive
+        (33.8401, False),
+        (30.0799, False),
+    ])
+    def test_the_interval_is_inclusive_at_both_ends(self, claim, inside):
+        """A claim exactly on the bound is consistent with the data, not 'wrong'."""
+        text = tools.verify_claim(INSULIN_Q, claim).text
+        assert ("INSIDE the verified interval" in text) is inside
+
+    def test_a_concept_without_a_machine_readable_interval_refuses(self):
+        """It must not adjudicate what it cannot measure.
+
+        DIBAGETC_A's CI lives only in prose, so `bounds` is None. The first version fell back to
+        equality-to-2dp while still printing "it falls outside the verified interval": a claim of
+        47.5 was declared unsupported when the real interval is 46.75-48.08. A confident FALSE
+        correction, stamped VERIFIED, that the provenance gate cannot catch because the falsehood
+        is prose rather than a digit. Both directions are pinned — the branch had zero coverage.
+        """
+        age_q = "What is the average age at diabetes diagnosis?"
+        for claim in (47.41, 47.5, 46.9, 99.0):
+            result = tools.verify_claim(age_q, claim)
+            assert result.mode == "REFUSED", f"{claim} was adjudicated without an interval"
+            assert not result.figures
+
+    def test_a_mean_is_not_rendered_as_a_percentage(self):
+        """Mutation-proven gap: rendering 47.41 years as '47.41%' passed the suite."""
+        # okf_facts is the reporting path for a mean; it must carry the unit, not a percent sign.
+        text = tools.okf_facts("What is the average age at diabetes diagnosis?").text
+        assert "years" in text
+        assert "47.41%" not in text

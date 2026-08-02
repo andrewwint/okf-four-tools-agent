@@ -216,8 +216,12 @@ class TestTheDeployArtifactMatchesTheSource:
         if not dist.is_dir():
             pytest.skip("no dist/ — nothing can be deployed stale")
 
+        # main.py is included deliberately: it decides WHICH TOOLS ARE REGISTERED, so a stale
+        # dist/main.py deploys a different agent than the one reviewed while this guard stays
+        # green. The guard globbed agent/ only, which is exactly the file it most needed to watch.
+        sources = [*(root / "agent").rglob("*.py"), root / "main.py"]
         stale = []
-        for source in (root / "agent").rglob("*.py"):
+        for source in sources:
             if "__pycache__" in source.parts:
                 continue
             shipped = dist / source.relative_to(root)

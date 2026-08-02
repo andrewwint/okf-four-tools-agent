@@ -125,11 +125,20 @@ def build(model_key: str, called: list[str], news_payload: str):
         called.append("health_news")
         return "[LIVE] " + provenance.fence(news_payload)
 
+    @tool
+    def verify_claim(question: str, claim: float) -> str:
+        called.append("verify_claim")
+        return real_tools.verify_claim(question, claim).render()
+
     model_id, _, _ = MODELS[model_key]
+    # Every tool the prompt advertises must be registered here. The prompt is imported from the
+    # real agent precisely so the benchmark measures the shipped instructions — which means a
+    # tool added there and not here leaves the model told to call something it cannot, on the
+    # exact path (a forged headline) this benchmark exists to measure.
     return Agent(
         model=BedrockModel(model_id=model_id, region_name="us-east-1", max_tokens=800),
         system_prompt=real_tools.SYSTEM_PROMPT,
-        tools=[okf_facts, okf_query, kb_narrative, health_news],
+        tools=[okf_facts, okf_query, kb_narrative, health_news, verify_claim],
     )
 
 

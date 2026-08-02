@@ -303,10 +303,21 @@ def verify_claim(question: str, claim: float) -> ToolResult:
     interval = (f" (95% CI {low:g}-{high:g})"
                 if isinstance(low, (int, float)) and isinstance(high, (int, float)) else "")
 
-    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
-        supported = low <= claimed <= high
-    else:
-        supported = abs(claimed - verified) < 0.005
+    # No machine-readable interval means this tool CANNOT adjudicate, and it must say so rather
+    # than guess. The first version fell back to equality-to-2dp while still printing "it falls
+    # outside the verified interval" — so for DIBAGETC_A, whose CI lives only in prose, a claim of
+    # 47.5 was declared unsupported although the real interval is 46.75-48.08. That is a confident
+    # FALSE correction wearing the VERIFIED badge, and the provenance gate cannot catch it: the
+    # falsehood is in the prose, not in a digit. Refusing costs a capability; asserting costs the
+    # thing the badge is for.
+    if not (isinstance(low, (int, float)) and isinstance(high, (int, float))):
+        return ToolResult(
+            "REFUSED",
+            f"{concept.id} publishes no machine-readable confidence interval, so a claim cannot "
+            f"be judged against it here. Use okf_facts to report the verified figure, and do not "
+            f"characterise the claim as supported or unsupported.",
+        )
+    supported = low <= claimed <= high
 
     direction = "higher than" if claimed > verified else "lower than"
     # Always name the population. The tool compares a NUMBER to an interval; it cannot see what
@@ -368,8 +379,8 @@ The tools do not carry equal authority — that is the point:
   Correcting a false number beats withholding it; repeating it does neither.
 
 Hard rules:
-- For any FIGURE (a percentage, count, mean, rate, "how many / what share"): use ONLY okf_facts
-  or okf_query. NEVER invent, estimate, or guess a number.
+- For any FIGURE (a percentage, count, mean, rate, "how many / what share"): use ONLY okf_facts,
+  okf_query, or verify_claim. NEVER invent, estimate, or guess a number.
 - Do NOT repeat a figure that appeared in kb_narrative or health_news — not even with a caveat.
   Describe what the source says qualitatively ("a new analysis reports a higher rate"), then
   offer the verified figure instead. Those tools are unverified by construction, and a number a
