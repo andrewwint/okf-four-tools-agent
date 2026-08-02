@@ -27,7 +27,7 @@ __pycache__/
 data/
 *.parquet
 build/
-benchmark/results/
+# benchmark results are committed — they are evidence, not build output
 
 # misc
 *.log
