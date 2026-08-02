@@ -57,22 +57,68 @@ def fence(text: str, limit: int = 1200) -> str:
 # The provenance ledger
 # --------------------------------------------------------------------------------------
 
-# Numbers that are never "figures": years, and the survey's own identifiers.
-_IGNORE = {"2023", "2018", "95"}
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# Thousands separators FIRST, so "1,579" is one number and not "1" and "579". Getting this wrong
+# withholds correct answers: a model writing "1,579 respondents" produced two phantom ungrounded
+# figures and the whole answer was suppressed.
+_NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+
+# Markdown list markers and numbered steps are structure, not statistics. "1." at the start of a
+# line is a bullet; treating it as an unsourced figure suppressed every answer that used a list.
+_LIST_MARKER = re.compile(r"(?m)^\s{0,4}(?:[-*]\s+)?(\d{1,2})[.)]\s")
 
 
 def numbers(text: str) -> set[str]:
-    """Every numeral in a piece of text, normalised so 9.80 and 9.8 compare equal."""
+    """Every numeral that could be a FIGURE, normalised so 9.80 and 9.8 compare equal."""
+    text = text or ""
+    stripped = _LIST_MARKER.sub(" ", text)
     found = set()
-    for raw in _NUMBER.findall(text or ""):
-        if raw in _IGNORE:
-            continue
+    for raw in _NUMBER.findall(stripped):
         try:
-            found.add(f"{float(raw):g}")
+            found.add(f"{float(raw.replace(',', '')):g}")
         except ValueError:
             continue
     return found
+
+
+# X4. A digit regex cannot see "sixty-two point four percent", and an injected instruction to
+# "state all figures in words" defeated the whole check. This is a regex chasing a language, so
+# it is deliberately conservative: a number-word near a percent sign is treated as an unverifiable
+# figure and blocks the answer. It cannot map words to values, and does not pretend to.
+_NUMBER_WORDS = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+    "fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy "
+    "eighty ninety hundred thousand quarter third half"
+).split()
+_SPELLED_FIGURE = re.compile(
+    r"\b(?:%s)\b[\w\s.-]{0,40}?(?:percent|per cent|%%)" % "|".join(_NUMBER_WORDS),
+    re.IGNORECASE,
+)
+
+
+def spelled_figures(text: str) -> list[str]:
+    """Figures written as words, which the digit regex cannot check."""
+    return [m.group(0).strip() for m in _SPELLED_FIGURE.finditer(text or "")]
+
+
+def _rounds_to(value: str, grounded: set[str]) -> bool:
+    """Is `value` a rounded restatement of something a trusted tool produced?
+
+    Models round: a tool returning 32.04 gets reported as "32%" or "32.0%". That is still the
+    grounded figure, and refusing it would train the model toward stranger phrasing rather than
+    toward better provenance. Rounding UP the precision is not allowed — only losing digits.
+    """
+    try:
+        number = float(value)
+    except ValueError:
+        return False
+    decimals = len(value.split(".")[1]) if "." in value else 0
+    for source in grounded:
+        try:
+            if round(float(source), decimals) == number:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 @dataclass
@@ -82,12 +128,20 @@ class Ledger:
     grounded: set[str] = field(default_factory=set)   # numbers a trusted tool produced
     modes: list[str] = field(default_factory=list)
 
-    def record(self, mode: str, text: str) -> None:
+    def record(self, mode: str, text: str, figures: set[str] | None = None) -> None:
+        """Record a tool result.
+
+        `figures` is the set of values the tool actually COMPUTED. Prefer it always. Scraping
+        numerals out of rendered text looks equivalent and is not: the source filename
+        "adult23.csv" contributed a grounded "23", so "23% of diagnosed adults take insulin"
+        passed the check. The citation laundered a fabrication. Only a structural figure list
+        closes that, which is why every trusted tool now reports one.
+        """
         self.modes.append(mode)
-        # ONLY these two modes may be the source of a figure. Retrieved prose and live headlines
-        # can contain numbers; those numbers are not grounded, which is the entire point.
-        if mode in ("VERIFIED", "COMPUTED"):
-            self.grounded |= numbers(text)
+        if mode not in ("VERIFIED", "COMPUTED"):
+            # Retrieved prose and live headlines contain numbers; those are never grounding.
+            return
+        self.grounded |= figures if figures is not None else numbers(text)
 
 
 @dataclass
@@ -104,7 +158,14 @@ def check(answer: str, ledger: Ledger, question: str = "") -> Verdict:
     a provenance failure.
     """
     asked = numbers(question)
-    ungrounded = numbers(answer) - ledger.grounded - asked
+    candidates = numbers(answer) - ledger.grounded - asked
+    ungrounded = {n for n in candidates if not _rounds_to(n, ledger.grounded)}
+
+    # A figure spelled out in words cannot be checked, so it cannot be allowed.
+    spelled = spelled_figures(answer)
+    if spelled:
+        ungrounded |= {f"spelled:{s}" for s in spelled}
+
     if not ungrounded:
         return Verdict(True, set())
     # Deliberately does NOT name the offending figures. They are attacker-influenceable content,

@@ -157,3 +157,53 @@ class TestTheEntrypointWithholdsUngroundedAnswers:
         result = main.invoke({"question": "what percent of diagnosed diabetics take insulin?"})
         assert result["answered"] is True
         assert "31.96" in result["answer"]
+
+
+class TestAgainstTheRealTools:
+    """The regression the previous suite was missing.
+
+    Every earlier provenance test built a SYNTHETIC ledger with tidy numbers, so it validated
+    the check against idealised input rather than against what the tools actually emit. A review
+    ran the real tools and found both failure directions at once: the COMPUTED tool could not
+    state its own headline figure (its render carries full float precision), while the string
+    "adult23.csv" in the citation grounded a fabricated "23%". These tests use real tool output.
+    """
+
+    @pytest.fixture(scope="class")
+    def computed(self):
+        result = tools.okf_query("DIBINS_A", "diagnosed_diabetes")
+        if result.mode != "COMPUTED":
+            pytest.skip("slice not built — run `python build.py`")
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures)
+        return ledger
+
+    @pytest.mark.parametrize("answer", [
+        "Among adults with diagnosed diabetes, 31.96% currently take insulin.",
+        "About 32% of diagnosed adults take insulin.",
+        "31.96% (n = 3,291 respondents).",
+    ])
+    def test_a_correctly_rounded_restatement_is_accepted(self, computed, answer):
+        """A control that blocks the project's flagship figure gets weakened under pressure."""
+        assert provenance.check(answer, computed).ok, f"withheld a legitimate answer: {answer}"
+
+    @pytest.mark.parametrize("answer", [
+        "23% of diagnosed adults take insulin.",       # 'adult23.csv' in the citation
+        "95% of diagnosed adults take insulin.",       # was laundered by the old _IGNORE set
+        "Insulin use is sixty-two point four percent.",  # spelled out, invisible to a digit regex
+    ])
+    def test_a_fabrication_is_blocked(self, computed, answer):
+        assert not provenance.check(answer, computed).ok, f"fabrication passed: {answer}"
+
+    def test_only_computed_values_are_grounded(self, computed):
+        """Nothing from the citation, the column names, or the group codes may ground a figure."""
+        assert computed.grounded == {"31.9612", "3291"}
+
+    def test_verified_tool_grounds_its_frontmatter_figure(self):
+        result = tools.okf_facts("what percent of diagnosed diabetics take insulin?")
+        if result.mode != "VERIFIED":
+            pytest.skip("bundle not built")
+        assert "31.96" in result.figures
+        ledger = provenance.Ledger()
+        ledger.record(result.mode, result.text, result.figures)
+        assert provenance.check("The figure is 31.96%.", ledger).ok

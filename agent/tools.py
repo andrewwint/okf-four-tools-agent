@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import facts, provenance, query
 from .containment import QueryRejected, build_guarded_connection
@@ -47,6 +47,10 @@ class ToolResult:
     mode: str          # VERIFIED | COMPUTED | RETRIEVED | LIVE | REFUSED
     text: str
     citation: str = ""
+    # The values this tool actually COMPUTED, as opposed to numerals that happen to appear in
+    # its rendered text (a source filename, a group code, a row count in a citation). The
+    # provenance ledger grounds on these and nothing else.
+    figures: set[str] = field(default_factory=set)
 
     def render(self) -> str:
         head = f"[{self.mode}]"
@@ -69,8 +73,14 @@ def okf_facts(question: str) -> ToolResult:
         first_line = next((ln for ln in concept.body.splitlines() if ln.strip()
                            and not ln.startswith("#")), "")
         return ToolResult("VERIFIED", f"{concept.title}. {first_line}", concept.citation)
-    detail = (concept.frontmatter.get("verification") or {}).get("detail", "")
-    return ToolResult("VERIFIED", f"{statistic} ({detail})".strip(), concept.citation)
+    fm = concept.frontmatter
+    detail = (fm.get("verification") or {}).get("detail", "")
+    figures = {f"{float(v):g}" for v in (fm.get("value_pct"), fm.get("value"))
+               if isinstance(v, (int, float))}
+    ci = (fm.get("verification") or {}).get("ci_95")
+    if isinstance(ci, list):
+        figures |= {f"{float(b):g}" for b in ci if isinstance(b, (int, float))}
+    return ToolResult("VERIFIED", f"{statistic} ({detail})".strip(), concept.citation, figures)
 
 
 # --------------------------------------------------------------------------------------
@@ -97,7 +107,10 @@ def okf_query(measure: str, universe: str, group_by: str | None = None) -> ToolR
         result = query.run_query(_connection(), measure, universe, group_by)
     except QueryRejected as exc:
         return ToolResult("REFUSED", str(exc))
-    return ToolResult("COMPUTED", result.render(), query.CONCEPT["source"])
+    # Every numeric cell in the result is a computed value; nothing else grounds anything.
+    figures = {f"{float(cell):g}" for row in result.rows for cell in row
+               if isinstance(cell, (int, float))}
+    return ToolResult("COMPUTED", result.render(), query.CONCEPT["source"], figures)
 
 
 def okf_query_catalogue() -> str:
