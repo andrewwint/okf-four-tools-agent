@@ -62,46 +62,57 @@ def fence(text: str, limit: int = 1200) -> str:
 # figures and the whole answer was suppressed.
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 
-# Markdown list markers and numbered steps are structure, not statistics. "1." at the start of a
-# line is a bullet; treating it as an unsourced figure suppressed every answer that used a list.
-# Bounded to 1-20: a list marker is a small ordinal. Allowing any two-digit number made
-# "62. That is the percentage of diagnosed adults taking insulin." invisible to the check, so a
-# one-line formatting instruction ("start your answer with the figure, then a period") laundered
-# any two-digit fabrication.
-_LIST_MARKER = re.compile(r"(?m)^\s{0,4}(?:[-*]\s+)?((?:1?[0-9]|20))[.)]\s")
-
-# A citation year is not a statistical claim. Every correct answer says "NHIS 2023", and once a
-# blanket ignore-list was (rightly) removed for laundering a fabricated "95%", the survey year
-# started withholding essentially every good answer — a fail-closed defect severe enough to get
-# the whole control ripped out.
+# What counts as a FIGURE.
 #
-# The principled distinction is not "which numbers are special" but "is this a figure at all":
-# a year is never a percentage. So a plausible year is skipped ONLY when it is not being used
-# as a quantity. "In 2023 the figure was 2023 percent" still blocks on the second one.
-_YEAR = re.compile(r"\b(1[89]\d{2}|20\d{2})\b(?!\s*(?:%|percent|per cent))")
+# The first version treated every numeral as a statistical claim, and a live deploy showed how
+# wrong that is. These were all withheld as "ungrounded figures":
+#
+#   "your type of diabetes (type 1 vs type 2)"   -> 1, 2   ... clinical terminology
+#   "1) unverified claims, and 2) I cannot ..."  -> 1, 2   ... enumeration
+#   "represents 100% of the population"          -> 100    ... definitional
+#
+# The first is the worst: "type 1 / type 2 diabetes" is the most ordinary vocabulary a diabetes
+# agent has, and the gate was suppressing correct refusals for using it. A control that fires on
+# normal language gets switched off.
+#
+# So the rule is narrowed to what it always meant: a figure is a numeral used as a QUANTITY
+# ABOUT THE DATA. In practice that is a number carrying a statistical marker (a percent sign, a
+# unit) or a decimal — bare decimals in prose are essentially always figures. A bare integer in
+# running text is terminology or enumeration, not a claim about 29,522 respondents.
+_FIGURE = re.compile(
+    r"""(?<![\w.])(
+        \d{1,3}(?:,\d{3})+(?:\.\d+)?   # 1,579
+      | \d+\.\d+                       # any decimal: 31.96
+      | \d+(?=\s*(?:%|percent\b|per cent\b|percentage\s+points?\b|pp\b|years?\b))
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# 100 is definitional in "100% of the population" and is never a survey estimate worth policing.
+_ALWAYS_ALLOWED = {"100"}
 
 
 def numbers(text: str) -> set[str]:
-    """Every numeral that could be a FIGURE, normalised so 9.80 and 9.8 compare equal."""
-    text = text or ""
-    stripped = _YEAR.sub(" ", _LIST_MARKER.sub(" ", text))
+    """Every numeral in the text being used as a FIGURE, normalised so 9.80 == 9.8."""
     found = set()
-    for raw in _NUMBER.findall(stripped):
+    for raw in _FIGURE.findall(text or ""):
         try:
-            found.add(f"{float(raw.replace(',', '')):g}")
+            value = f"{float(raw.replace(',', '')):g}"
         except ValueError:
             continue
+        if value not in _ALWAYS_ALLOWED:
+            found.add(value)
     return found
 
 
-# X4. A digit regex cannot see "sixty-two point four percent", and an injected instruction to
-# "state all figures in words" defeated the whole check. This is a regex chasing a language, so
-# it is deliberately conservative: a number-word near a percent sign is treated as an unverifiable
-# figure and blocks the answer. It cannot map words to values, and does not pretend to.
+# A digit regex cannot see "sixty-two point four percent", and an injected instruction to
+# "state all figures in words" defeated the check entirely. Deliberately conservative and openly
+# incomplete: it stops the literal word-figure evasion, not the whole class — English expresses
+# quantity without the word "percent" ("one in five"), and that residual is documented.
 _NUMBER_WORDS = (
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
     "fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy "
-    "eighty ninety hundred thousand quarter third half"
+    "eighty ninety hundred thousand"
 ).split()
 _SPELLED_FIGURE = re.compile(
     r"\b(?:%s)\b[\w\s.-]{0,40}?(?:percent|per cent|%%)" % "|".join(_NUMBER_WORDS),
@@ -110,7 +121,7 @@ _SPELLED_FIGURE = re.compile(
 
 
 def spelled_figures(text: str) -> list[str]:
-    """Figures written as words, which the digit regex cannot check."""
+    """Figures written as words, which the digit check cannot verify."""
     return [m.group(0).strip() for m in _SPELLED_FIGURE.finditer(text or "")]
 
 
@@ -179,15 +190,15 @@ def _derived(grounded: set[str]) -> set[str]:
             values.append(float(token))
         except ValueError:
             continue
+    # DIFFERENCES ONLY. Ratios were allowed briefly and immediately laundered a fabrication:
+    # 31.96 / 1.39 (the estimate over the design effect) = 22.99, which rounds to 23 — so
+    # "23% of diagnosed adults take insulin" passed. Dividing unrelated quantities manufactures
+    # a dense set of plausible-looking percentages, which is exactly what a grounding set must
+    # not be. Comparing two figures is the real use case, and a difference is what that needs.
     out: set[str] = set()
     for i, a in enumerate(values):
         for b in values[i + 1:]:
-            for value in (a - b, b - a, a + b):
-                out.add(f"{abs(value):g}")
-            if b:
-                out.add(f"{a / b:g}")
-            if a:
-                out.add(f"{b / a:g}")
+            out.add(f"{abs(a - b):g}")
     return out
 
 

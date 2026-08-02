@@ -33,3 +33,12 @@ build/
 *.log
 .DS_Store
 dist/
+
+# agentcore CLI working state — build cache, vendored deps, deploy logs. The staging dir
+# contains platform wheels (a 52 MB duckdb .so) and must never be committed.
+agentcore/.cache/
+agentcore/.cli/
+agentcore/.llm-context/
+agentcore/cdk/node_modules/
+agentcore/cdk/cdk.out/
+agentcore/cdk/dist/

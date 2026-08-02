@@ -1,7 +1,0 @@
-# AgentCore runtime deps. duckdb reads parquet natively — no pandas, no pyarrow, no sklearn.
-# Retrieval over five markdown files is term matching, not embeddings.
-bedrock-agentcore>=1.9.1
-strands-agents>=1.15.0
-duckdb>=1.5
-pyyaml>=6.0
-boto3>=1.35

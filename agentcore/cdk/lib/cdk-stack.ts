@@ -113,6 +113,22 @@ export class AgentCoreStack extends Stack {
     }
     this.application = new AgentCoreApplication(this, 'Application', appProps as any);
 
+    // Wire per-runtime environment variables declared in agentcore.json. The vended stack has
+    // no generic path for these — it only wires payment tokens — so without this the agent
+    // deploys with no OKF_KB_ID or OKF_NEWS_FUNCTION and two of its four tools report
+    // themselves unconfigured. Config-driven rather than hardcoded, so the values stay in
+    // agentcore.json where they are reviewable.
+    for (const env of this.application.environments.values()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const declared = (spec as any).runtimes?.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (r: any) => r.name === env.agent?.name,
+      )?.environmentVariables as Record<string, string> | undefined;
+      for (const [key, value] of Object.entries(declared ?? {})) {
+        env.runtime.addEnvironmentVariable(key, value);
+      }
+    }
+
     // Create AgentCoreMcp if there are gateways configured
     if (mcpSpec?.agentCoreGateways && mcpSpec.agentCoreGateways.length > 0) {
       new AgentCoreMcp(this, 'Mcp', {

@@ -102,8 +102,12 @@ class TestNumbersMustBeGrounded:
         assert "62.4" in verdict.ungrounded
 
     def test_a_figure_from_retrieved_prose_is_blocked(self):
-        """Retrieved documentation is grounded text, but it is not a verified figure."""
-        verdict = provenance.check("The answer is 47.", self._ledger())
+        """Retrieved documentation is grounded text, but it is not a verified figure.
+
+        Note the figure must LOOK like one: a bare integer in prose is terminology or
+        enumeration ("type 2 diabetes", "1) first point"), not a claim about the data.
+        """
+        verdict = provenance.check("The answer is 47%.", self._ledger())
         assert not verdict.ok
 
     def test_an_invented_figure_is_blocked(self):
