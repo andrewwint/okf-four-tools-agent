@@ -74,12 +74,23 @@ def okf_facts(question: str) -> ToolResult:
                            and not ln.startswith("#")), "")
         return ToolResult("VERIFIED", f"{concept.title}. {first_line}", concept.citation)
     fm = concept.frontmatter
-    detail = (fm.get("verification") or {}).get("detail", "")
-    figures = {f"{float(v):g}" for v in (fm.get("value_pct"), fm.get("value"))
-               if isinstance(v, (int, float))}
-    ci = (fm.get("verification") or {}).get("ci_95")
-    if isinstance(ci, list):
-        figures |= {f"{float(b):g}" for b in ci if isinstance(b, (int, float))}
+    verification = fm.get("verification") or {}
+    detail = verification.get("detail", "")
+
+    # Everything the verifier computed and checked, not just the headline figure. Grounding only
+    # value_pct meant "31.96% (95% CI 30.08-33.84)" — the best-cited form the prompt asks for —
+    # was withheld because 95, the SE and the DEFF were not "computed values". A control that
+    # blocks the most careful answer trains the system toward bare point estimates.
+    figures = {f"{float(v):g}" for v in (
+        fm.get("value_pct"), fm.get("value"),
+        verification.get("se_pp"), verification.get("deff"),
+        verification.get("correct_pct"), verification.get("claimed_pct"),
+        95,  # the CI level: "95% CI" is part of how a verified interval is written
+    ) if isinstance(v, (int, float))}
+    for key in ("ci_95", "ci"):
+        bounds = verification.get(key)
+        if isinstance(bounds, list):
+            figures |= {f"{float(b):g}" for b in bounds if isinstance(b, (int, float))}
     return ToolResult("VERIFIED", f"{statistic} ({detail})".strip(), concept.citation, figures)
 
 
