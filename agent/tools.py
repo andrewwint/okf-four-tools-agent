@@ -1,6 +1,9 @@
-"""The four tools, and the one rule that keeps them from contaminating each other.
+"""The tools, and the one rule that keeps them from contaminating each other.
 
 Each tool returns its answer stamped with the KIND OF KNOWING behind it:
+
+There are FOUR KINDS OF KNOWING and five tools: verify_claim is not a fifth kind, it is the
+verified one pointed at somebody else's claim, and it returns VERIFIED.
 
     VERIFIED   okf_facts    a figure recomputed from the microdata and checked at build time
     COMPUTED   okf_query    a figure calculated now, from a declared query the concept verified
@@ -337,7 +340,7 @@ def verify_claim(question: str, claim: float) -> ToolResult:
 
 
 SYSTEM_PROMPT = f"""\
-You answer questions about U.S. health survey statistics (CDC NHIS 2023) using ONLY the four
+You answer questions about U.S. health survey statistics (CDC NHIS 2023) using ONLY the
 tools below. Never use outside knowledge for a figure.
 
 The tools do not carry equal authority — that is the point:

@@ -1,8 +1,8 @@
-"""AgentCore Runtime entrypoint — the whole four-tool agent, assembled and served here.
+"""AgentCore Runtime entrypoint — the whole agent, assembled and served here.
 
 Open this file to see the entire deployed surface at a glance:
 
-  * the four `@tool`s the agent may call, one per KIND OF KNOWING,
+  * the `@tool`s the agent may call — four kinds of knowing, five tools,
   * the Strands `Agent` on Amazon Bedrock, built per request, and
   * `invoke`, the `POST /invocations` entrypoint.
 
@@ -43,7 +43,7 @@ app = BedrockAgentCoreApp()
 log = app.logger
 
 # Per-request bounds. The endpoint is authenticated, but "authenticated" is not "authorised to
-# spend": a four-tool loop is many model calls, so cap the input and the output.
+# spend": a multi-tool loop is many model calls, so cap the input and the output.
 MAX_QUESTION_CHARS = 600
 MAX_OUTPUT_TOKENS = 800
 
@@ -51,7 +51,7 @@ MODEL_ID = os.environ.get("OKF_MODEL_ID", "us.anthropic.claude-sonnet-4-5-202509
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
-# --- The four tools, one per kind of knowing ---------------------------------------------
+# --- The tools. Four kinds of knowing; verify_claim is VERIFIED pointed at a claim ---------------------------------------------
 
 @tool
 def okf_facts(question: str) -> str:
