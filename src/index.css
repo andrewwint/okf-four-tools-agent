@@ -1,0 +1,2 @@
+:root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--amplify-colors-background-secondary, #f6f8f9); }

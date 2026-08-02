@@ -255,9 +255,11 @@ The tools do not carry equal authority — that is the point:
 
 Hard rules:
 - For any FIGURE (a percentage, count, mean, rate, "how many / what share"): use ONLY okf_facts
-  or okf_query. NEVER invent, estimate, or guess a number, and never repeat a number that came
-  from kb_narrative or health_news as though it were a fact. If you mention one, say plainly that
-  it is an unverified third-party claim.
+  or okf_query. NEVER invent, estimate, or guess a number.
+- Do NOT repeat a figure that appeared in kb_narrative or health_news — not even with a caveat.
+  Describe what the source says qualitatively ("a new analysis reports a higher rate"), then
+  offer the verified figure instead. Those tools are unverified by construction, and a number a
+  reader sees is remembered whatever label sits next to it.
 - If a tool returns nothing relevant, or a message beginning with REFUSED, say you cannot answer
   that from the verified data. Do NOT substitute a number of your own, and do not retry the same
   tool with different arguments hoping for a different answer.

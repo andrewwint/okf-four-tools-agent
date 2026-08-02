@@ -2,14 +2,17 @@
   "name": "okf-four-tools-agent",
   "version": "0.1.0",
   "type": "module",
-  "description": "One agent, four kinds of knowing — verified figures, computed queries, retrieved prose, live news.",
+  "description": "One agent, four kinds of knowing \u2014 verified figures, computed queries, retrieved prose, live news.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "sandbox": "ampx sandbox",
     "sandbox:delete": "ampx sandbox delete",
-    "secret": "ampx sandbox secret set NEWS_API_KEY"
+    "secret": "ampx sandbox secret set NEWS_API_KEY",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.7.0",
@@ -20,6 +23,16 @@
     "aws-cdk-lib": "^2.178.1",
     "constructs": "^10.3.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.14"
+  },
+  "dependencies": {
+    "@aws-amplify/ui-react": "^6.5.5",
+    "aws-amplify": "^6.8.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }
