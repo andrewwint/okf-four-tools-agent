@@ -45,6 +45,22 @@ const SAMPLES = [
 
 type Result = Awaited<ReturnType<typeof client.queries.askAgent>>["data"];
 
+/** Render the model's **bold** without pulling in a markdown library — the figures are the
+ *  point of every answer, and showing them as literal asterisks buries them. */
+function RichText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={i}>{part.slice(2, -2)}</strong>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 export default function App() {
   return <Authenticator>{({ signOut }) => <Ask signOut={signOut} />}</Authenticator>;
 }
@@ -132,7 +148,9 @@ function Ask({ signOut }: { signOut?: () => void }) {
           <Text fontSize="0.78rem" color="font.tertiary" marginBottom="0.75rem">
             {mode.note}
           </Text>
-          <Text whiteSpace="pre-wrap">{result.answer}</Text>
+          <Text whiteSpace="pre-wrap">
+            <RichText text={result.answer ?? ""} />
+          </Text>
         </Card>
       )}
     </View>
