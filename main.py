@@ -86,6 +86,17 @@ def health_news(topic: str) -> str:
     return _record(tools.health_news(topic))
 
 
+@tool
+def verify_claim(question: str, claim: float) -> str:
+    """VERIFIED. Check a figure claimed by an unverified source (a headline, retrieved prose)
+    against the verified bundle. Call this instead of repeating the claim. `question` describes
+    what the claim is about, in the source's own terms including its population — it is matched
+    against the verified concepts and REFUSED if none covers it. `claim` is the number the
+    source stated. Report the verified figure and the population it describes, and whether the
+    claim is supported; do NOT restate the claimed figure."""
+    return _record(tools.verify_claim(question, claim))
+
+
 # --- The agent ---------------------------------------------------------------------------
 
 def build_agent() -> Agent:
@@ -99,7 +110,7 @@ def build_agent() -> Agent:
             model_id=MODEL_ID, region_name=REGION, max_tokens=MAX_OUTPUT_TOKENS
         ),
         system_prompt=tools.SYSTEM_PROMPT,
-        tools=[okf_facts, okf_query, kb_narrative, health_news],
+        tools=[okf_facts, okf_query, kb_narrative, health_news, verify_claim],
     )
 
 

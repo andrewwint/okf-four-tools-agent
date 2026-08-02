@@ -233,6 +233,109 @@ def health_news(topic: str, function_name: str | None = None, region: str = "us-
     )
 
 
+# --------------------------------------------------------------------------------------
+# 5. CHECKED — an unverified claim held against the verified figure
+# --------------------------------------------------------------------------------------
+
+def verify_claim(question: str, claim: float) -> ToolResult:
+    """Hold a figure claimed by an untrusted source against the verified one.
+
+    Withholding is safe but not useful. When a headline claims 62.4% and the bundle carries a
+    verified 31.96% for that exact measure, the better answer is a CORRECTION, not silence.
+
+    Two design rules make that possible without reopening the gate:
+
+    1. **The claimed value is never grounded and never echoed.** It is not in `figures`, so the
+       ledger gives the model no licence to restate it, and it is absent from the rendered text
+       so there is nothing to copy. This is what makes the tool safe to expose: the model may
+       pass any `claim` it likes — including one it invented — and no false figure can reach the
+       answer through this path. The obvious alternative (ground the claim so the answer can say
+       "the headline said 62.4%, which is wrong") is a laundering channel: once 62.4 is in the
+       ledger, "62.4% of adults take insulin" also passes, and the two differ only by prose the
+       model composes.
+
+    2. **A correction does not require repeating the falsehood.** "That figure is not supported;
+       the verified value is 31.96% (95% CI 30.08-33.84)" is a complete correction. Health
+       communication has known for a long time that restating a false number helps it stick, so
+       not printing it is better practice as well as safer — the constraint and the right answer
+       happen to agree.
+
+    The verdict is decided against the confidence interval, not the point estimate: a claim
+    inside the interval is consistent with the verified data, and calling it "wrong" because it
+    is not identical would be its own kind of false precision.
+
+    3. **The concept is resolved by the guarded retrieval, never by a model-supplied id.** An
+       independent review broke the first version on exactly this: taking `measure="DIBEV_A"`
+       from the model made this an unconditional oracle for any bundle figure, bypassing the
+       population and coverage guards in `facts.search`. `okf_facts` refuses "the diabetes rate
+       in California"; the id-keyed version happily grounded 9.8% for it, and "In California,
+       9.8% of adults have diagnosed diabetes [DIBEV_A]" passed the gate. A right number under
+       the wrong denominator wearing the VERIFIED badge is this project's headline defect, so
+       this tool goes through the same front door as every other verified answer.
+    """
+    hits = facts.search(question or "", k=1)
+    if not hits:
+        return ToolResult("REFUSED", "No verified concept covers that question, so there is "
+                                     "nothing to check the claim against.")
+    concept, _ = hits[0]
+
+    fm = concept.frontmatter
+    verified = fm.get("value_pct")
+    if verified is None:
+        verified = fm.get("value")
+    if not isinstance(verified, (int, float)):
+        return ToolResult("REFUSED", f"{concept.id} carries no verified figure to check against.")
+
+    verification = fm.get("verification") or {}
+    bounds = verification.get("ci_95") or verification.get("ci")
+    low, high = (bounds if isinstance(bounds, list) and len(bounds) == 2 else (None, None))
+
+    try:
+        claimed = float(claim)
+    except (TypeError, ValueError):
+        return ToolResult("REFUSED", "The claim to check must be a number.")
+
+    unit = fm.get("unit", "%" if fm.get("value_pct") is not None else "")
+    shown = f"{verified:g}%" if fm.get("value_pct") is not None else f"{verified:g} {unit}".strip()
+    interval = (f" (95% CI {low:g}-{high:g})"
+                if isinstance(low, (int, float)) and isinstance(high, (int, float)) else "")
+
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        supported = low <= claimed <= high
+    else:
+        supported = abs(claimed - verified) < 0.005
+
+    direction = "higher than" if claimed > verified else "lower than"
+    # Always name the population. The tool compares a NUMBER to an interval; it cannot see what
+    # the source's number was ABOUT. A review found that "the claimed figure is CONSISTENT with
+    # the verified data" reads as an endorsement of the source's sentence, so a headline quoting
+    # 31.5% for children was endorsed against the diagnosed-adult figure with no ungrounded digit
+    # for the gate to catch. The verdict is therefore stated about the measure, never about the
+    # claim's subject, and the population travels with the figure.
+    statistic = fm.get("statistic") or concept.title
+    if supported:
+        note = (f"The claimed number falls INSIDE the verified interval for this measure. "
+                f"Verified: {statistic} = {shown}{interval}. "
+                f"This compares magnitudes only — it does NOT confirm the source was describing "
+                f"this population. Give the verified figure with the population above, and say "
+                f"the claim agrees only if the source described that same population.")
+    else:
+        note = (f"The claimed number is NOT SUPPORTED for this measure — it falls outside the "
+                f"verified interval and is materially {direction} the verified value. "
+                f"Verified: {statistic} = {shown}{interval}. "
+                f"Report the verified figure and its population, and say the claim is "
+                f"unsupported. Do not restate the claimed figure.")
+
+    # Only the VERIFIED quantities are grounded. The claim is deliberately absent.
+    figures = {f"{float(verified):g}"}
+    for bound in (low, high):
+        if isinstance(bound, (int, float)):
+            figures.add(f"{float(bound):g}")
+    if interval:
+        figures.add("95")
+    return ToolResult("VERIFIED", note, concept.citation, figures)
+
+
 SYSTEM_PROMPT = f"""\
 You answer questions about U.S. health survey statistics (CDC NHIS 2023) using ONLY the four
 tools below. Never use outside knowledge for a figure.
@@ -252,6 +355,14 @@ The tools do not carry equal authority — that is the point:
   document.
 - health_news(topic)                  LIVE, NOT VERIFIED. Third-party headlines, for "what is
   new" only. topic is one of: diabetes, insulin, public_health.
+
+- verify_claim(question, claim)       VERIFIED. Hold a number claimed by an unverified source
+  against the verified bundle. If a headline or retrieved passage states a figure, call this
+  INSTEAD of repeating it. Pass `question` as what the source's number is about, IN THE SOURCE'S
+  OWN TERMS INCLUDING THE POPULATION ("insulin use among adults with diagnosed diabetes"); it is
+  refused when no verified concept covers that. Report the verified figure WITH the population
+  it describes, and whether the claim is supported. Do NOT restate the claimed figure.
+  Correcting a false number beats withholding it; repeating it does neither.
 
 Hard rules:
 - For any FIGURE (a percentage, count, mean, rate, "how many / what share"): use ONLY okf_facts

@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agent import tools  # noqa: E402
+from agent import provenance, tools  # noqa: E402
 
 BUNDLE_BUILT = (Path(__file__).resolve().parents[1] / "agent" / "bundle").is_dir()
 needs_build = pytest.mark.skipif(not BUNDLE_BUILT, reason="run `python build.py` first")
@@ -161,3 +161,97 @@ class TestTheSystemPromptStatesTheRule:
     def test_all_four_modes_are_named(self):
         for mode in ("VERIFIED", "COMPUTED", "RETRIEVED", "LIVE"):
             assert mode in tools.SYSTEM_PROMPT
+
+
+
+INSULIN_Q = "insulin use among adults with diagnosed diabetes"
+
+
+class TestVerifyClaim:
+    """Correcting a false figure without becoming a way to launder one.
+
+    The tool exists because withholding is safe but useless: when a headline claims 62.4% and
+    the bundle carries a verified 31.96%, a correction beats silence. The danger is the obvious
+    implementation — ground the claim so the answer may say "the headline said 62.4%, which is
+    wrong" — because that puts an attacker-chosen number in the ledger, after which the bare
+    assertion "62.4% of adults take insulin" passes too. The two differ only by prose the model
+    composes. These tests pin the property that makes the tool safe: the claim is never grounded.
+    """
+
+    def test_a_forged_claim_is_reported_unsupported(self):
+        result = tools.verify_claim(INSULIN_Q, 62.4)
+        assert result.mode == "VERIFIED"
+        assert "NOT SUPPORTED" in result.text
+        assert "31.96" in result.text
+
+    @pytest.mark.parametrize("claim", [62.4, 99.9, 0.1, 12345.6])
+    def test_the_claimed_figure_is_never_grounded(self, claim):
+        """The whole safety argument: the model may pass a claim it invented, and no claim
+        may become quotable."""
+        assert f"{claim:g}" not in tools.verify_claim(INSULIN_Q, claim).figures
+
+    def test_only_verified_quantities_are_grounded(self):
+        assert tools.verify_claim(INSULIN_Q, 62.4).figures == {"31.96", "30.08", "33.84", "95"}
+
+    def test_an_invented_claim_cannot_be_laundered_into_an_answer(self):
+        """End to end through the real gate: run the tool, then try to state the attacker's
+        number as fact."""
+        ledger = provenance.Ledger()
+        result = tools.verify_claim(INSULIN_Q, 62.4)
+        ledger.record(result.mode, result.text, result.figures)
+        verdict = provenance.check("62.4% of diagnosed adults take insulin.", ledger)
+        assert not verdict.ok
+        assert "62.4" in verdict.ungrounded
+
+    def test_the_correction_itself_passes_the_gate(self):
+        """The answer we actually want must not be withheld."""
+        ledger = provenance.Ledger()
+        result = tools.verify_claim(INSULIN_Q, 62.4)
+        ledger.record(result.mode, result.text, result.figures)
+        verdict = provenance.check(
+            "That headline's figure is not supported by the verified data. The 2023 NHIS "
+            "figure is 31.96% (95% CI 30.08-33.84) [DIBINS_A].", ledger)
+        assert verdict.ok, f"correction was withheld: {verdict.ungrounded}"
+
+    def test_a_claim_inside_the_interval_is_consistent(self):
+        """Judged against the CI, not the point estimate: 31.5 is not 'wrong'."""
+        assert "INSIDE the verified interval" in tools.verify_claim(INSULIN_Q, 31.5).text
+
+    def test_a_question_no_concept_covers_refuses(self):
+        assert tools.verify_claim("the capital of France", 5).mode == "REFUSED"
+
+    def test_a_non_numeric_claim_refuses(self):
+        assert tools.verify_claim(INSULIN_Q, "sixty-two").mode == "REFUSED"
+
+    @pytest.mark.parametrize("question", [
+        "What is the diabetes rate in California?",
+        "insulin use among children with diagnosed diabetes",
+        "how many pregnant women take insulin",
+    ])
+    def test_it_refuses_exactly_what_okf_facts_refuses(self, question):
+        """The population/coverage guard must not be bypassable through this tool.
+
+        The first version took `measure` as a model-supplied concept id, which made it an
+        unconditional oracle for any bundle figure: an independent review showed okf_facts
+        REFUSING "the diabetes rate in California" while verify_claim("DIBEV_A", 9.8) returned
+        VERIFIED and grounded 9.8, so "In California, 9.8% of adults have diagnosed diabetes
+        [DIBEV_A]" passed the gate. Right number, wrong denominator, verified badge — the exact
+        defect this project exists to catch. Both tools now go through facts.search.
+        """
+        assert tools.okf_facts(question).mode == "REFUSED"
+        result = tools.verify_claim(question, 9.8)
+        assert result.mode == "REFUSED"
+        assert not result.figures
+
+    def test_a_consistent_verdict_does_not_endorse_the_source(self):
+        """It compares magnitudes; it cannot see what the source's number was ABOUT.
+
+        "The claimed figure is CONSISTENT with the verified data" reads as an endorsement of the
+        source's sentence, so a headline quoting 31.5% for the wrong population was endorsed
+        against the diagnosed-adult figure with no ungrounded digit for the gate to catch.
+        """
+        text = tools.verify_claim(INSULIN_Q, 31.5).text
+        assert "does NOT confirm" in text
+        assert "population" in text
+        # the population must travel with the figure
+        assert "diagnosed diabetes" in text
