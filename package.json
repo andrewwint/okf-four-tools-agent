@@ -2,7 +2,7 @@
   "name": "okf-four-tools-agent",
   "version": "0.1.0",
   "type": "module",
-  "description": "One agent, four kinds of knowing \u2014 verified figures, computed queries, retrieved prose, live news.",
+  "description": "One agent, four kinds of knowing — verified figures, computed queries, retrieved prose, live news.",
   "engines": {
     "node": ">=20"
   },
@@ -15,6 +15,7 @@
     "@aws-amplify/backend": "^1.7.0",
     "@aws-amplify/backend-cli": "^1.4.2",
     "@aws-sdk/client-bedrock-agentcore": "^3.1101.0",
+    "@types/node": "^22.20.1",
     "aws-cdk": "^2.155.0",
     "aws-cdk-lib": "^2.178.1",
     "constructs": "^10.3.0",
