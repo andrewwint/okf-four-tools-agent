@@ -140,8 +140,11 @@ class TestUntrustedContentIsFenced:
 class TestTheSystemPromptStatesTheRule:
 
     def test_a_number_may_only_come_from_a_verified_or_computed_tool(self):
-        prompt = tools.SYSTEM_PROMPT
-        assert "ONLY EVER COME FROM okf_facts OR okf_query" in prompt
+        """Assert the RULE, not one phrasing of it — the prompt gets reworded."""
+        prompt = tools.SYSTEM_PROMPT.lower()
+        assert "only okf_facts" in prompt or "only okf_facts or okf_query" in prompt
+        assert "never invent" in prompt
+        assert "refused" in prompt, "the prompt must say what to do when a tool refuses"
 
     def test_the_prompt_lists_what_the_query_tool_accepts(self):
         assert "DIBINS_A" in tools.SYSTEM_PROMPT

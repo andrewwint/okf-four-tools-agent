@@ -66,11 +66,21 @@ _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 # line is a bullet; treating it as an unsourced figure suppressed every answer that used a list.
 _LIST_MARKER = re.compile(r"(?m)^\s{0,4}(?:[-*]\s+)?(\d{1,2})[.)]\s")
 
+# A citation year is not a statistical claim. Every correct answer says "NHIS 2023", and once a
+# blanket ignore-list was (rightly) removed for laundering a fabricated "95%", the survey year
+# started withholding essentially every good answer — a fail-closed defect severe enough to get
+# the whole control ripped out.
+#
+# The principled distinction is not "which numbers are special" but "is this a figure at all":
+# a year is never a percentage. So a plausible year is skipped ONLY when it is not being used
+# as a quantity. "In 2023 the figure was 2023 percent" still blocks on the second one.
+_YEAR = re.compile(r"\b(1[89]\d{2}|20\d{2})\b(?!\s*(?:%|percent|per cent))")
+
 
 def numbers(text: str) -> set[str]:
     """Every numeral that could be a FIGURE, normalised so 9.80 and 9.8 compare equal."""
     text = text or ""
-    stripped = _LIST_MARKER.sub(" ", text)
+    stripped = _YEAR.sub(" ", _LIST_MARKER.sub(" ", text))
     found = set()
     for raw in _NUMBER.findall(stripped):
         try:
