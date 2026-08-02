@@ -177,10 +177,19 @@ def health_news(topic: str, function_name: str | None = None, region: str = "us-
     payload = json.dumps({"arguments": {"category": NEWS_TOPICS[topic]}}).encode()
     response = client.invoke(FunctionName=name, Payload=payload)
     body = json.loads(response["Payload"].read() or b"{}")
-    items = body if isinstance(body, list) else [body]
+
+    # The Lambda answers {"items": [...], "error"?: str}. Accept a bare list too, so a future
+    # handler change degrades to "no headlines" rather than a traceback.
+    if isinstance(body, dict):
+        if body.get("error"):
+            return ToolResult("REFUSED", str(body["error"]))
+        items = body.get("items") or []
+    else:
+        items = body if isinstance(body, list) else []
+
     lines = [
         f"- {i.get('title', '').strip()} — {i.get('description', '').strip()}"
-        for i in items if i.get("title")
+        for i in items if isinstance(i, dict) and i.get("title")
     ]
     if not lines:
         return ToolResult("REFUSED", "No headlines returned.")

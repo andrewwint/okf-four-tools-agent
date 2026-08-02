@@ -75,6 +75,32 @@ class TestModesAreLabelled:
         assert tools.kb_narrative("how does weighting work").mode == "REFUSED"
         assert tools.health_news("diabetes").mode == "REFUSED"
 
+    def test_news_parses_the_lambda_response_contract(self):
+        """The Lambda answers {"items": [...]}. An earlier client expected a flat dict and
+        silently reported 'no headlines' against a Lambda that was working fine."""
+        import io, json as _json
+
+        class Client:
+            def invoke(self, **_):
+                body = {"items": [{"title": "Study on insulin", "description": "A summary."}]}
+                return {"Payload": io.BytesIO(_json.dumps(body).encode())}
+
+        result = tools.health_news("diabetes", function_name="fn", client=Client())
+        assert result.mode == "LIVE"
+        assert "Study on insulin" in result.text
+        assert tools.UNTRUSTED_OPEN in result.text
+
+    def test_news_surfaces_an_upstream_error_without_crashing(self):
+        import io, json as _json
+
+        class Client:
+            def invoke(self, **_):
+                body = {"items": [], "error": "The news source is unavailable."}
+                return {"Payload": io.BytesIO(_json.dumps(body).encode())}
+
+        result = tools.health_news("diabetes", function_name="fn", client=Client())
+        assert result.mode == "REFUSED"
+
     def test_news_topics_are_a_closed_list(self):
         """The API key is metered; an injected instruction must not drive arbitrary queries."""
         assert tools.health_news("bitcoin prices").mode == "REFUSED"

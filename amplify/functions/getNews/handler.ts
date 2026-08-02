@@ -39,9 +39,13 @@ export const handler = async (event: {
     return { items: [], error: `Unknown topic. Choose one of: ${Object.keys(TOPICS).join(", ")}` };
   }
 
+  // `searchIn=title` matters: without it the term matches anywhere in the body, and a query for
+  // "insulin" returns loosely-related health news that mentions the word once. A headline the
+  // agent labels LIVE should at least be about the topic it was asked for.
   const url =
     `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}` +
-    `&language=en&sortBy=publishedAt&pageSize=${MAX_ITEMS}&apiKey=${env.NEWS_API_KEY}`;
+    `&searchIn=title&language=en&sortBy=publishedAt&pageSize=${MAX_ITEMS}` +
+    `&apiKey=${env.NEWS_API_KEY}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
