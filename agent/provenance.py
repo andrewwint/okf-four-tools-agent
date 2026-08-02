@@ -165,6 +165,32 @@ class Verdict:
     note: str = ""
 
 
+def _derived(grounded: set[str]) -> set[str]:
+    """Values obtainable by simple arithmetic on two grounded figures.
+
+    Comparing two verified figures is legitimate analysis, not fabrication: "men 32.04%, women
+    31.88%, a gap of 0.2 points" is three true statements. Blocking the third pushed the agent
+    toward reporting figures without saying what they mean. Bounded deliberately to one operation
+    over a pair — a chain of derivations would let arbitrary numbers in through the back door.
+    """
+    values = []
+    for token in grounded:
+        try:
+            values.append(float(token))
+        except ValueError:
+            continue
+    out: set[str] = set()
+    for i, a in enumerate(values):
+        for b in values[i + 1:]:
+            for value in (a - b, b - a, a + b):
+                out.add(f"{abs(value):g}")
+            if b:
+                out.add(f"{a / b:g}")
+            if a:
+                out.add(f"{b / a:g}")
+    return out
+
+
 def check(answer: str, ledger: Ledger, question: str = "") -> Verdict:
     """Does every number in the answer trace back to a tool allowed to produce numbers?
 
@@ -173,7 +199,9 @@ def check(answer: str, ledger: Ledger, question: str = "") -> Verdict:
     """
     asked = numbers(question)
     candidates = numbers(answer) - ledger.grounded - asked
-    ungrounded = {n for n in candidates if not _rounds_to(n, ledger.grounded)}
+    # A figure may be a grounded value, a rounding of one, or simple arithmetic over two of them.
+    allowed = ledger.grounded | _derived(ledger.grounded)
+    ungrounded = {n for n in candidates if not _rounds_to(n, allowed)}
 
     # A figure spelled out in words cannot be checked, so it cannot be allowed.
     spelled = spelled_figures(answer)
