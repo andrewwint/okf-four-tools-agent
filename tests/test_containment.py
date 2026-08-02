@@ -198,3 +198,32 @@ class TestLayer1ContainmentWithParserStubbedOut:
         assert rows[0][0] > 0 and columns == ["n"]
 
 
+
+
+class TestTheDeployArtifactMatchesTheSource:
+    """`agentcore.json` ships `dist/`, so a stale `dist/` deploys code nobody reviewed.
+
+    A pre-deploy review found `dist/` two commits behind: it still carried the laundering bug the
+    review existed to close. The remedy was one command, but "remember to run build.py" is not a
+    control — so the mismatch is a test failure instead.
+    """
+
+    def test_dist_is_absent_or_current(self):
+        import filecmp
+
+        root = Path(__file__).resolve().parents[1]
+        dist = root / "dist"
+        if not dist.is_dir():
+            pytest.skip("no dist/ — nothing can be deployed stale")
+
+        stale = []
+        for source in (root / "agent").rglob("*.py"):
+            if "__pycache__" in source.parts:
+                continue
+            shipped = dist / source.relative_to(root)
+            if not shipped.exists() or not filecmp.cmp(source, shipped, shallow=False):
+                stale.append(str(source.relative_to(root)))
+        assert not stale, (
+            f"dist/ is stale ({stale}) — run `python build.py` before deploying, or the "
+            "artifact will not be the code that was reviewed"
+        )

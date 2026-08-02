@@ -64,7 +64,11 @@ _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 
 # Markdown list markers and numbered steps are structure, not statistics. "1." at the start of a
 # line is a bullet; treating it as an unsourced figure suppressed every answer that used a list.
-_LIST_MARKER = re.compile(r"(?m)^\s{0,4}(?:[-*]\s+)?(\d{1,2})[.)]\s")
+# Bounded to 1-20: a list marker is a small ordinal. Allowing any two-digit number made
+# "62. That is the percentage of diagnosed adults taking insulin." invisible to the check, so a
+# one-line formatting instruction ("start your answer with the figure, then a period") laundered
+# any two-digit fabrication.
+_LIST_MARKER = re.compile(r"(?m)^\s{0,4}(?:[-*]\s+)?((?:1?[0-9]|20))[.)]\s")
 
 # A citation year is not a statistical claim. Every correct answer says "NHIS 2023", and once a
 # blanket ignore-list was (rightly) removed for laundering a fabricated "95%", the survey year

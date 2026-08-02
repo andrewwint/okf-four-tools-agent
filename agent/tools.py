@@ -107,9 +107,15 @@ def okf_query(measure: str, universe: str, group_by: str | None = None) -> ToolR
         result = query.run_query(_connection(), measure, universe, group_by)
     except QueryRejected as exc:
         return ToolResult("REFUSED", str(exc))
-    # Every numeric cell in the result is a computed value; nothing else grounds anything.
-    figures = {f"{float(cell):g}" for row in result.rows for cell in row
-               if isinstance(cell, (int, float))}
+    # Ground the MEASURE and the sample size only. A grouping column carries CODES, not figures:
+    # grounding SEX_A's {1, 2} let "only 2% of U.S. adults have diabetes" pass (the true figure
+    # is 9.8%). One ordinary "does it differ by sex?" question armed the ledger with 1 and 2 for
+    # the rest of the turn. build_sql owns the projection, so the value columns are known: the
+    # group key is first when present, and count(*) is always last.
+    value_columns = [i for i, name in enumerate(result.columns)
+                     if name != (result.group_by or "")]
+    figures = {f"{float(row[i]):g}" for row in result.rows for i in value_columns
+               if i < len(row) and isinstance(row[i], (int, float))}
     return ToolResult("COMPUTED", result.render(), query.CONCEPT["source"], figures)
 
 

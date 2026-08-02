@@ -26,7 +26,11 @@ ROUTING = {
     "% taking insulin among diagnosed diabetics": "DIBINS_A",
     "What percent of adults with diagnosed diabetes take insulin?": "DIBINS_A",
     "What percent of US adults have diabetes?": "DIBEV_A",
-    "How common is diabetes?": "DIBEV_A",
+    # Deliberately refuses. A "title hit rescues a low coverage score" clause made this work,
+    # and the same clause answered "what percent of CHILDREN take insulin?" with the ADULTS
+    # figure, stamped VERIFIED. Losing a paraphrase costs a retry; the alternative cost the
+    # reader a wrong-population health statistic.
+    "How common is diabetes?": None,
     "What is the average age at diabetes diagnosis?": "DIBAGETC_A",
     "Tell me about prediabetes": "PREDIB_A",
     "What is prediabetes?": "PREDIB_A",
@@ -36,6 +40,10 @@ ROUTING = {
     "How many people have heart disease?": None,
     "What is the capital of France?": None,
     "How does survey weighting work?": None,
+    # Wrong-population questions: the number would be real, the denominator wrong.
+    "What percent of children take insulin?": None,
+    "What percent of pregnant women take insulin?": None,
+    "What percent of type 1 diabetics take insulin?": None,
 }
 
 

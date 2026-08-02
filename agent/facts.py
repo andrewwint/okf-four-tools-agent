@@ -72,6 +72,32 @@ class Concept:
         return f"{self.id} ({self.frontmatter.get('source', 'NHIS 2023 Sample Adult')})"
 
 
+# Words that name a DIFFERENT population from the one every concept here was computed over
+# (U.S. adults). A question using one is asking about a denominator the bundle does not have,
+# so returning the adults figure would be right-number/wrong-population — the exact defect this
+# project exists to catch, and the one the provenance ledger structurally cannot see.
+#
+# Honest about the limit: this is a list, not a boundary. It covers the classes an independent
+# review demonstrated (age, pregnancy, sex, diabetes type). It does NOT cover geography or every
+# clinical subgroup. The durable mitigation is that every answer states the universe it was
+# computed over, which is why the system prompt requires the denominator with every figure.
+POPULATION_QUALIFIERS = frozenset(
+    "child children kid kids teen teens teenager adolescent youth minor minors "
+    "pregnant pregnancy maternal "
+    "elderly senior seniors "
+    "veteran veterans "
+    "type1 type2".split()
+)
+
+
+def _names_another_population(question: str) -> bool:
+    words = set(re.findall(r"[a-z0-9]+", question.lower()))
+    if words & POPULATION_QUALIFIERS:
+        return True
+    # "type 1" / "type 2" survive tokenisation as two words.
+    return bool(re.search(r"\btype\s*[12]\b", question, re.IGNORECASE))
+
+
 def _tokens(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9_]{3,}", text.lower()) if w not in STOPWORDS}
 
@@ -135,15 +161,26 @@ def search(question: str, k: int = 1) -> list[tuple[Concept, float]]:
     asked = _tokens(question)
     if not asked:
         return []
+    if _names_another_population(question):
+        return []   # refuse rather than answer about adults
 
     ranked = []
     for concept, title_terms, all_terms in _indexed():
         coverage = len(asked & all_terms) / len(asked)
-        # A title hit is strong evidence on its own, and it rescues honest paraphrases the
-        # bundle does not share vocabulary with — "how common is diabetes" keeps the unknown
-        # word "common", which would otherwise drag coverage under the bar. It cannot rescue a
-        # question about something the bundle has never heard of, because no title matches.
-        if coverage < MIN_SCORE and not (asked & title_terms):
+        # Coverage alone gates. There WAS a "title hit rescues a low score" clause here, added so
+        # that "how common is diabetes" would answer despite the unknown word "common". An
+        # independent review showed what it really bought:
+        #
+        #   "what percent of CHILDREN take insulin?"        -> [VERIFIED] 31.96%  (adults)
+        #   "what percent of PREGNANT WOMEN take insulin?"   -> [VERIFIED] 31.96%  (adults)
+        #   "what is the diabetes rate in CALIFORNIA?"       -> [VERIFIED] 9.8%    (national)
+        #
+        # One shared title word was enough, and the unmatched word was the one that changed the
+        # POPULATION. The provenance ledger cannot catch this: the number is genuinely grounded,
+        # only the denominator is wrong — which is this project's headline defect wearing its
+        # last available disguise. Refusing an honest paraphrase costs a retry; answering about
+        # children with an adults figure costs the reader.
+        if coverage < MIN_SCORE:
             continue
         ranked.append(
             (
