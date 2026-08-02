@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "okffourtools",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "okffourtools"
+  },
+  "runtimes": [
+    {
+      "name": "okffourtools",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "dist/",
+      "runtimeVersion": "PYTHON_3_12",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "environmentVariables": {
+        "OKF_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "OKF_KB_ID": "U78LLZTZEL",
+        "OKF_NEWS_FUNCTION": "amplify-okffourtoolsagent-an-getNewslambda832EFEA8-TYRI8OaXz1QH"
+      }
+    }
+  ],
+  "memories": [],
+  "knowledgeBases": [],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [],
+  "policyEngines": [],
+  "configBundles": [],
+  "abTests": [],
+  "harnesses": [],
+  "datasets": [],
+  "payments": []
+}

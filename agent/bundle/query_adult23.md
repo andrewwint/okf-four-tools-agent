@@ -55,6 +55,9 @@ groupings:
   SEX_A:
     label: "Sex"
     valid: [1, 2]
+    # Rendered instead of the raw code. A code is an identifier, not a figure, so it is never
+    # grounded — and an answer that echoed "SEX_A 1" was withheld in full. Show words.
+    value_labels: { 1: "Male", 2: "Female" }
 
 # THE GATE. Each example is executed at compile time and must match. A capability whose
 # examples stop matching is quarantined — the agent loses the tool rather than gaining a

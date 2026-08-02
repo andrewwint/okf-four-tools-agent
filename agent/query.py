@@ -96,8 +96,20 @@ class Result:
         return self.rows[0][0] if len(self.rows) == 1 else None
 
     def render(self) -> str:
+        labels = (GROUPINGS.get(self.group_by, {}) or {}).get("value_labels") or {}
+
+        def cell(value, index: int) -> str:
+            # Substitute the group label for its code, and round the figure: full float
+            # precision invites the model to quote 31.961243238265087 as if that were the
+            # verified claim, when the concept states 31.96.
+            if index == 0 and self.group_by and labels:
+                return str(labels.get(value, value))
+            return f"{value:.2f}" if isinstance(value, float) else str(value)
+
         head = " | ".join(self.columns)
-        body = "\n".join(" | ".join(str(v) for v in row) for row in self.rows)
+        body = "\n".join(
+            " | ".join(cell(v, i) for i, v in enumerate(row)) for row in self.rows
+        )
         by = f" by {GROUPINGS[self.group_by]['label']}" if self.group_by else ""
         return (f"{MEASURES[self.measure]['label']} — {UNIVERSES[self.universe]['label']}{by}\n"
                 f"Estimate is survey-weighted ({WEIGHT}); n_sample is a raw unweighted "

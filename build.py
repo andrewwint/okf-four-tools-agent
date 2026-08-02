@@ -105,7 +105,7 @@ def build_slice(columns: list[str]) -> None:
 # review flagged the live API key sitting inside the artifact — the boundary the whole
 # remote-Lambda design exists to create, undone by a packaging default. Staging is free; verifying
 # an exclusion you cannot see is not.
-SHIPS = ["main.py", "requirements.txt", "agent", "concepts"]
+SHIPS = ["main.py", "pyproject.toml", "requirements.txt", "agent", "concepts"]
 NEVER_SHIP = {".env", ".env.example", "__pycache__", ".venv", "tests", "amplify", "node_modules"}
 
 
