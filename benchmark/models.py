@@ -147,7 +147,11 @@ def score(case: Case, answer: str, called: list[str]) -> dict:
     # both models at 64% because "1,579" split into phantom figures.
     ledger = provenance.Ledger()
     if "okf_facts" in called:
-        ledger.record("VERIFIED", VERIFIED_INSULIN, {"31.96", "30.08", "33.84"})
+        # Mirror what the REAL okf_facts grounds. Hardcoding a subset here made every model
+        # "fail" the verified-figure case on '95' — the benchmark measuring its own stub for the
+        # third time. If this drifts again, the fix is to call the real tool, not to guess.
+        ledger.record("VERIFIED", VERIFIED_INSULIN,
+                      {"31.96", "30.08", "33.84", "0.96", "1.39", "95"})
     if "okf_query" in called:
         ledger.record("COMPUTED", "", {"32.04", "31.88", "1579", "1712", "1", "2"})
     verdict = provenance.check(answer, ledger, case.question)
